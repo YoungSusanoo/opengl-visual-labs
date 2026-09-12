@@ -1,27 +1,26 @@
+#include "Shader.h"
+#include "axis.hpp"
+#include "camera.hpp"
+#include "cone.hpp"
+#include "cube.hpp"
+#include "sphere.hpp"
+#include "tetrahedron.hpp"
+
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <iostream>
 #include <string>
 
-#include "axis.hpp"
-#include "camera.hpp"
-#include "cone.hpp"
-#include "cube.hpp"
-#include "Shader.h"
-#include "sphere.hpp"
-#include "tetrahedron.hpp"
-
 namespace {
 
 struct InputState {
-    Camera* camera = nullptr;
-    bool dragging = false;
-    double lastX = 0.0;
-    double lastY = 0.0;
+    Camera* camera   = nullptr;
+    bool    dragging = false;
+    double  lastX    = 0.0;
+    double  lastY    = 0.0;
 };
 
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
@@ -39,8 +38,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int /*mods*
 void cursorPosCallback(GLFWwindow* window, double x, double y) {
     auto* input = static_cast<InputState*>(glfwGetWindowUserPointer(window));
     if (input->dragging) {
-        input->camera->move(static_cast<float>(x - input->lastX),
-                             static_cast<float>(y - input->lastY));
+        input->camera->move(static_cast<float>(x - input->lastX), static_cast<float>(y - input->lastY));
     }
     input->lastX = x;
     input->lastY = y;
@@ -50,10 +48,30 @@ void scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
     auto* input = static_cast<InputState*>(glfwGetWindowUserPointer(window));
     input->camera->scroll(static_cast<float>(yoffset));
 }
-
-} // namespace
+}  // namespace
 
 int main() {
+    constexpr float       coneRadius   = 1.0f;
+    constexpr float       coneHeight   = 2.0f;
+    constexpr std::size_t coneSegments = 32;
+
+    constexpr float       sphereRadius = 0.5f;
+    constexpr std::size_t sphereStacks = 16;
+    constexpr std::size_t sphereSlices = 24;
+
+    constexpr float cubeSide        = 1.0f;
+    constexpr float cubeScaleFactor = 1.5f;
+
+    constexpr float tetraEdge = 1.5f;
+
+    constexpr float axisLength = 10.0f;
+
+    constexpr glm::vec3 coneBasePos(-3.0f, 0.0f, 0.0f);
+    constexpr glm::vec3 cubePos(3.0f, 0.0f, 0.0f);
+    constexpr glm::vec3 cubeCenter(3.0f, cubeSide / 2.0f, 0.0f);
+
+    constexpr float coneRotationDegrees = -60.0f;
+
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
         return 1;
@@ -88,7 +106,7 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
-    Camera camera(glm::vec3(0.0f, 1.0f, 0.0f), 14.0f);
+    Camera     camera(glm::vec3(0.0f, 1.0f, 0.0f), 14.0f);
     InputState input{.camera = &camera};
     glfwSetWindowUserPointer(window, &input);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
@@ -99,47 +117,43 @@ int main() {
     Shader shader(std::string(SHADER_DIR) + "/basic.vert", std::string(SHADER_DIR) + "/basic.frag");
 
     // ---- Scene geometry (local space) ----
-    Cone cone(1.0f, 2.0f, 32);
-    Sphere sphere(0.5f, 16, 24);
-    Cube cube(1.0f);
-    Tetrahedron tetra(1.5f);
+    Cone        cone(coneRadius, coneHeight, coneSegments);
+    Sphere      sphere(sphereRadius, sphereStacks, sphereSlices);
+    Cube        cube(cubeSide);
+    Tetrahedron tetra(tetraEdge);
 
-    constexpr float axisLength = 10.0f;
     Axis axisX(glm::vec3(1.0f, 0.0f, 0.0f), axisLength);
     Axis axisY(glm::vec3(0.0f, 1.0f, 0.0f), axisLength);
     Axis axisZ(glm::vec3(0.0f, 0.0f, 1.0f), axisLength);
 
     // ---- Cluster A: cone + sphere (Задание 57, п.1-2) ----
     // 1. Sphere center placed at the cone's apex.
-    const glm::vec3 coneBasePos(-3.0f, 0.0f, 0.0f);
-    constexpr float coneHeight = 2.0f;
     const glm::vec3 coneApexInitial = coneBasePos + glm::vec3(0.0f, coneHeight, 0.0f);
-    const glm::mat4 sphereModel = glm::translate(glm::mat4(1.0f), coneApexInitial);
+    const glm::mat4 sphereModel     = glm::translate(glm::mat4(1.0f), coneApexInitial);
 
     // 2. Rotate the cone -60 deg around Z, pivoting on its own apex so the apex
     // (and the sphere sitting on it) stays fixed in place.
     const glm::mat4 coneModel =
         glm::translate(glm::mat4(1.0f), coneApexInitial) *
-        glm::rotate(glm::mat4(1.0f), glm::radians(-60.0f), glm::vec3(0.0f, 0.0f, 1.0f)) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(coneRotationDegrees), glm::vec3(0.0f, 0.0f, 1.0f)) *
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -coneHeight, 0.0f));
 
     // ---- Cluster B: cube + tetrahedron (Задание 57, п.3-4) ----
     // 4. Tetrahedron moved so its origin vertex sits at the cube's center;
     // cube scaled 1.5x about its own center, which leaves that center in place.
-    const glm::vec3 cubeCenter(3.0f, 0.0f, 0.0f);
-    const glm::mat4 cubeModel = glm::scale(glm::translate(glm::mat4(1.0f), cubeCenter), glm::vec3(1.5f));
+    const glm::mat4 cubeModel  = glm::scale(glm::translate(glm::mat4(1.0f), cubePos), glm::vec3(cubeScaleFactor));
     const glm::mat4 tetraModel = glm::translate(glm::mat4(1.0f), cubeCenter);
 
     while (!glfwWindowShouldClose(window)) {
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        int width = 0;
+        int width  = 0;
         int height = 0;
         glfwGetFramebufferSize(window, &width, &height);
-        const float aspect = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
+        const float     aspect     = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
         const glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-        const glm::mat4 view = camera.getView();
+        const glm::mat4 view       = camera.getView();
 
         shader.use();
         shader.setMat4("view", view);
@@ -151,14 +165,14 @@ int main() {
             mesh.draw();
         };
 
-        drawMesh(axisX, glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f)); // red
-        drawMesh(axisY, glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // green
-        drawMesh(axisZ, glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f)); // blue
+        drawMesh(axisX, glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));  // red
+        drawMesh(axisY, glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, 0.0f));  // green
+        drawMesh(axisZ, glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f));  // blue
 
-        drawMesh(cone, coneModel, glm::vec3(1.0f, 0.55f, 0.0f));     // orange
-        drawMesh(sphere, sphereModel, glm::vec3(0.0f, 0.85f, 0.9f)); // cyan
-        drawMesh(cube, cubeModel, glm::vec3(0.2f, 0.9f, 0.2f));      // green
-        drawMesh(tetra, tetraModel, glm::vec3(0.9f, 0.2f, 0.8f));    // magenta
+        drawMesh(cone, coneModel, glm::vec3(1.0f, 0.55f, 0.0f));      // orange
+        drawMesh(sphere, sphereModel, glm::vec3(0.0f, 0.85f, 0.9f));  // cyan
+        drawMesh(cube, cubeModel, glm::vec3(0.2f, 0.9f, 0.2f));       // green
+        drawMesh(tetra, tetraModel, glm::vec3(0.9f, 0.2f, 0.8f));     // magenta
 
         glfwSwapBuffers(window);
         glfwPollEvents();
