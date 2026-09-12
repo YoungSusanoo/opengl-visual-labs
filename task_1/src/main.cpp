@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 
+#include "axis.hpp"
 #include "camera.hpp"
 #include "cone.hpp"
 #include "cube.hpp"
@@ -103,6 +104,11 @@ int main() {
     Cube cube(1.0f);
     Tetrahedron tetra(1.5f);
 
+    constexpr float axisLength = 10.0f;
+    Axis axisX(glm::vec3(1.0f, 0.0f, 0.0f), axisLength);
+    Axis axisY(glm::vec3(0.0f, 1.0f, 0.0f), axisLength);
+    Axis axisZ(glm::vec3(0.0f, 0.0f, 1.0f), axisLength);
+
     // ---- Cluster A: cone + sphere (Задание 57, п.1-2) ----
     // 1. Sphere center placed at the cone's apex.
     const glm::vec3 coneBasePos(-3.0f, 0.0f, 0.0f);
@@ -110,10 +116,12 @@ int main() {
     const glm::vec3 coneApexInitial = coneBasePos + glm::vec3(0.0f, coneHeight, 0.0f);
     const glm::mat4 sphereModel = glm::translate(glm::mat4(1.0f), coneApexInitial);
 
-    // 2. Rotate the cone -60 deg around Z, about its own base (local origin).
-    // The sphere is left where it was, so the apex visibly moves away from it.
-    const glm::mat4 coneModel = glm::rotate(glm::translate(glm::mat4(1.0f), coneBasePos),
-                                             glm::radians(-60.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // 2. Rotate the cone -60 deg around Z, pivoting on its own apex so the apex
+    // (and the sphere sitting on it) stays fixed in place.
+    const glm::mat4 coneModel =
+        glm::translate(glm::mat4(1.0f), coneApexInitial) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(-60.0f), glm::vec3(0.0f, 0.0f, 1.0f)) *
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -coneHeight, 0.0f));
 
     // ---- Cluster B: cube + tetrahedron (Задание 57, п.3-4) ----
     // 4. Tetrahedron moved so its origin vertex sits at the cube's center;
@@ -142,6 +150,10 @@ int main() {
             shader.setVec3("color", color);
             mesh.draw();
         };
+
+        drawMesh(axisX, glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f)); // red
+        drawMesh(axisY, glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // green
+        drawMesh(axisZ, glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f)); // blue
 
         drawMesh(cone, coneModel, glm::vec3(1.0f, 0.55f, 0.0f));     // orange
         drawMesh(sphere, sphereModel, glm::vec3(0.0f, 0.85f, 0.9f)); // cyan
