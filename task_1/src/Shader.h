@@ -17,7 +17,7 @@ public:
     void setVec3(const std::string& name, const glm::vec3& value) const;
 
 private:
-    unsigned int m_program = 0;
+    unsigned int program_ = 0;
 
     static unsigned int compile(const std::string& path, unsigned int type);
 };
