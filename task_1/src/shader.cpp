@@ -1,4 +1,4 @@
-#include "Shader.h"
+#include "shader.hpp"
 
 #include <GL/glew.h>
 
@@ -12,7 +12,7 @@ unsigned int Shader::compile(const std::string& path, unsigned int type) {
         throw std::runtime_error("Failed to open shader file: " + path);
     }
     const std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    const char* src = source.c_str();
+    const char*       src = source.c_str();
 
     unsigned int shader = glCreateShader(type);
     glShaderSource(shader, 1, &src, nullptr);
@@ -39,16 +39,13 @@ Shader::Shader(const std::string& vertPath, const std::string& fragPath) {
 
     int success = 0;
     glGetProgramiv(program_, GL_LINK_STATUS, &success);
+    glDeleteShader(vert);
+    glDeleteShader(frag);
     if (!success) {
         char log[1024];
         glGetProgramInfoLog(program_, sizeof(log), nullptr, log);
-        glDeleteShader(vert);
-        glDeleteShader(frag);
         throw std::runtime_error(std::string("Shader link error: ") + log);
     }
-
-    glDeleteShader(vert);
-    glDeleteShader(frag);
 }
 
 Shader::~Shader() {

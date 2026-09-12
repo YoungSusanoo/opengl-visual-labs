@@ -1,4 +1,4 @@
-#include "Shader.h"
+#include "shader.hpp"
 #include "axis.hpp"
 #include "camera.hpp"
 #include "cone.hpp"
@@ -91,11 +91,6 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    // On core-profile contexts GLEW's own extension-string probe (glGetString(GL_EXTENSIONS))
-    // is itself invalid and raises a harmless GL_INVALID_ENUM, which glewInit() reports as
-    // failure even though glewExperimental=GL_TRUE already loaded every function pointer we
-    // need. Clear that spurious error and verify a representative pointer instead of trusting
-    // glewInit()'s return value.
     glewExperimental = GL_TRUE;
     glewInit();
     glGetError();
@@ -126,21 +121,14 @@ int main() {
     Axis axisY(glm::vec3(0.0f, 1.0f, 0.0f), axisLength);
     Axis axisZ(glm::vec3(0.0f, 0.0f, 1.0f), axisLength);
 
-    // ---- Cluster A: cone + sphere (Задание 57, п.1-2) ----
-    // 1. Sphere center placed at the cone's apex.
     const glm::vec3 coneApexInitial = coneBasePos + glm::vec3(0.0f, coneHeight, 0.0f);
     const glm::mat4 sphereModel     = glm::translate(glm::mat4(1.0f), coneApexInitial);
 
-    // 2. Rotate the cone -60 deg around Z, pivoting on its own apex so the apex
-    // (and the sphere sitting on it) stays fixed in place.
     const glm::mat4 coneModel =
         glm::translate(glm::mat4(1.0f), coneApexInitial) *
         glm::rotate(glm::mat4(1.0f), glm::radians(coneRotationDegrees), glm::vec3(0.0f, 0.0f, 1.0f)) *
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -coneHeight, 0.0f));
 
-    // ---- Cluster B: cube + tetrahedron (Задание 57, п.3-4) ----
-    // 4. Tetrahedron moved so its origin vertex sits at the cube's center;
-    // cube scaled 1.5x about its own center, which leaves that center in place.
     const glm::mat4 cubeModel  = glm::scale(glm::translate(glm::mat4(1.0f), cubePos), glm::vec3(cubeScaleFactor));
     const glm::mat4 tetraModel = glm::translate(glm::mat4(1.0f), cubeCenter);
 
