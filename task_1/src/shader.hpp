@@ -1,15 +1,15 @@
 #pragma once
 
-#include <string>
-
 #include <glm/glm.hpp>
+
+#include <string>
 
 class Shader {
 public:
     Shader(const std::string& vertPath, const std::string& fragPath);
     ~Shader();
 
-    Shader(const Shader&) = delete;
+    Shader(const Shader&)            = delete;
     Shader& operator=(const Shader&) = delete;
 
     void use() const;

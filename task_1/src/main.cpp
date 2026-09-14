@@ -9,6 +9,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -47,6 +48,9 @@ void scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
 }  // namespace
 
 int main() {
+    constexpr std::string_view shaderVert = "shaders/basic.vert";
+    constexpr std::string_view shaderFrag = "shaders/basic.frag";
+
     constexpr float       coneRadius   = 1.0f;
     constexpr float       coneHeight   = 2.0f;
     constexpr std::size_t coneSegments = 32;
@@ -105,9 +109,8 @@ int main() {
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetScrollCallback(window, scrollCallback);
 
-    Shader shader(std::string(SHADER_DIR) + "/basic.vert", std::string(SHADER_DIR) + "/basic.frag");
+    Shader shader(std::string{shaderVert}, std::string{shaderFrag});
 
-    // ---- Scene geometry (local space) ----
     Cone        cone(coneRadius, coneHeight, coneSegments);
     Sphere      sphere(sphereRadius, sphereStacks, sphereSlices);
     Cube        cube(cubeSide);

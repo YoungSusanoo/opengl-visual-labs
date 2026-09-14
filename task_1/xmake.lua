@@ -11,4 +11,4 @@ target("task1")
     add_packages("pkgconfig::glfw3", "pkgconfig::glew")
     add_includedirs("/usr/include") -- glm is header-only, no .pc file shipped
     add_syslinks("GL")
-    add_defines("SHADER_DIR=\"" .. os.projectdir() .. "/shaders\"")
+    set_rundir(os.projectdir()) -- so the relative "shaders" path resolves under `xmake run`
