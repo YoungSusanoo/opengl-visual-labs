@@ -1,5 +1,4 @@
-#include "camera.hpp"
-#include "meshes.hpp"
+#include "scenes.hpp"
 #include "shader.hpp"
 
 #include <GL/glew.h>
@@ -7,71 +6,104 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <array>
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <string_view>
 
 namespace {
 
-struct InputState {
-    Camera* camera   = nullptr;
-    bool    dragging = false;
-    double  lastX    = 0.0;
-    double  lastY    = 0.0;
+constexpr std::size_t sceneCount       = 2;
+constexpr double      animationSeconds = 2.0;
+
+struct Presentation {
+    std::size_t scene      = 0;
+    Phase       phase      = Phase::Idle;
+    double      start      = 0.0;
+    bool        titleDirty = true;
 };
 
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int /*mods*/) {
-    auto* input = static_cast<InputState*>(glfwGetWindowUserPointer(window));
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        input->dragging = (action == GLFW_PRESS);
-        glfwGetCursorPos(window, &input->lastX, &input->lastY);
+// Space: start the animation of the current scene, or switch to the next scene once it has finished.
+void keyCallback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/) {
+    if (key != GLFW_KEY_SPACE || action != GLFW_PRESS) {
+        return;
     }
-}
-
-void cursorPosCallback(GLFWwindow* window, double x, double y) {
-    auto* input = static_cast<InputState*>(glfwGetWindowUserPointer(window));
-    if (input->dragging) {
-        input->camera->move(static_cast<float>(x - input->lastX), static_cast<float>(y - input->lastY));
+    auto* presentation = static_cast<Presentation*>(glfwGetWindowUserPointer(window));
+    switch (presentation->phase) {
+        case Phase::Idle:
+            presentation->phase = Phase::Animating;
+            presentation->start = glfwGetTime();
+            break;
+        case Phase::Animating:
+            return;
+        case Phase::Finished:
+            presentation->scene = (presentation->scene + 1) % sceneCount;
+            presentation->phase = Phase::Idle;
+            break;
     }
-    input->lastX = x;
-    input->lastY = y;
+    presentation->titleDirty = true;
 }
 
-void scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
-    auto* input = static_cast<InputState*>(glfwGetWindowUserPointer(window));
-    input->camera->scroll(static_cast<float>(yoffset));
-}
-}  // namespace
-
-int main() {
+void run(GLFWwindow* window) {
     constexpr std::string_view shaderVert = "shaders/basic.vert";
     constexpr std::string_view shaderFrag = "shaders/basic.frag";
 
-    constexpr float       coneRadius   = 1.0f;
-    constexpr float       coneHeight   = 2.0f;
-    constexpr std::size_t coneSegments = 32;
+    Shader shader(std::string{shaderVert}, std::string{shaderFrag});
 
-    constexpr float       sphereRadius = 0.5f;
-    constexpr std::size_t sphereStacks = 16;
-    constexpr std::size_t sphereSlices = 24;
+    const ConeSphereScene                         coneSphere;
+    const CubeTetraScene                          cubeTetra;
+    const std::array<const Scene*, sceneCount>    scenes{&coneSphere, &cubeTetra};
 
-    constexpr float cubeSide        = 1.0f;
-    constexpr float cubeScaleFactor = 1.5f;
+    Presentation presentation;
+    glfwSetWindowUserPointer(window, &presentation);
+    glfwSetKeyCallback(window, keyCallback);
 
-    constexpr float tetraEdge = 1.5f;
+    while (!glfwWindowShouldClose(window)) {
+        float progress = 0.0f;
+        if (presentation.phase == Phase::Animating) {
+            progress = static_cast<float>((glfwGetTime() - presentation.start) / animationSeconds);
+            if (progress >= 1.0f) {
+                presentation.phase      = Phase::Finished;
+                presentation.titleDirty = true;
+            }
+        }
+        if (presentation.phase == Phase::Finished) {
+            progress = 1.0f;
+        }
 
-    constexpr float axisLength = 10.0f;
+        const Scene& scene = *scenes[presentation.scene];
+        if (presentation.titleDirty) {
+            glfwSetWindowTitle(window, scene.title(presentation.phase));
+            presentation.titleDirty = false;
+        }
 
-    constexpr glm::vec3 coneBasePos(-3.0f, 0.0f, 0.0f);
-    constexpr glm::vec3 cubePos(3.0f, 0.0f, 0.0f);
-    constexpr glm::vec3 cubeCenter(3.0f, cubeSide / 2.0f, 0.0f);
+        glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    constexpr float coneRotationDegrees = -60.0f;
+        int width  = 0;
+        int height = 0;
+        glfwGetFramebufferSize(window, &width, &height);
+        const float     aspect     = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
+        const glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
 
+        shader.use();
+        shader.setMat4("view", scene.view());
+        shader.setMat4("projection", projection);
+        scene.draw(shader, progress);
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+}
+
+}  // namespace
+
+int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
         return 1;
@@ -96,74 +128,15 @@ int main() {
     glGetError();
     if (glGenVertexArrays == nullptr || glCreateShader == nullptr) {
         std::cerr << "Failed to load required OpenGL functions via GLEW\n";
+        glfwTerminate();
         return 1;
     }
 
     glEnable(GL_DEPTH_TEST);
-
-    Camera     camera(glm::vec3(0.0f, 1.0f, 0.0f), 14.0f);
-    InputState input{.camera = &camera};
-    glfwSetWindowUserPointer(window, &input);
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    glfwSetMouseButtonCallback(window, mouseButtonCallback);
-    glfwSetCursorPosCallback(window, cursorPosCallback);
-    glfwSetScrollCallback(window, scrollCallback);
 
-    Shader shader(std::string{shaderVert}, std::string{shaderFrag});
-
-    Cone        cone(coneRadius, coneHeight, coneSegments);
-    Sphere      sphere(sphereRadius, sphereStacks, sphereSlices);
-    Cube        cube(cubeSide);
-    Tetrahedron tetra(tetraEdge);
-
-    Axis axisX(glm::vec3(1.0f, 0.0f, 0.0f), axisLength);
-    Axis axisY(glm::vec3(0.0f, 1.0f, 0.0f), axisLength);
-    Axis axisZ(glm::vec3(0.0f, 0.0f, 1.0f), axisLength);
-
-    const glm::vec3 coneApexInitial = coneBasePos + glm::vec3(0.0f, coneHeight, 0.0f);
-    const glm::mat4 sphereModel     = glm::translate(glm::mat4(1.0f), coneApexInitial);
-
-    const glm::mat4 coneModel =
-        glm::translate(glm::mat4(1.0f), coneApexInitial) *
-        glm::rotate(glm::mat4(1.0f), glm::radians(coneRotationDegrees), glm::vec3(0.0f, 0.0f, 1.0f)) *
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -coneHeight, 0.0f));
-
-    const glm::mat4 cubeModel  = glm::scale(glm::translate(glm::mat4(1.0f), cubePos), glm::vec3(cubeScaleFactor));
-    const glm::mat4 tetraModel = glm::translate(glm::mat4(1.0f), cubeCenter);
-
-    while (!glfwWindowShouldClose(window)) {
-        glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        int width  = 0;
-        int height = 0;
-        glfwGetFramebufferSize(window, &width, &height);
-        const float     aspect     = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
-        const glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-        const glm::mat4 view       = camera.getView();
-
-        shader.use();
-        shader.setMat4("view", view);
-        shader.setMat4("projection", projection);
-
-        const auto drawMesh = [&](const Mesh& mesh, const glm::mat4& model, const glm::vec3& color) {
-            shader.setMat4("model", model);
-            shader.setVec3("color", color);
-            mesh.draw();
-        };
-
-        drawMesh(axisX, glm::mat4(1.0f), glm::vec3(1.0f, 0.0f, 0.0f));  // red
-        drawMesh(axisY, glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, 0.0f));  // green
-        drawMesh(axisZ, glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 1.0f));  // blue
-
-        drawMesh(cone, coneModel, glm::vec3(1.0f, 0.55f, 0.0f));      // orange
-        drawMesh(sphere, sphereModel, glm::vec3(0.0f, 0.85f, 0.9f));  // cyan
-        drawMesh(cube, cubeModel, glm::vec3(0.2f, 0.9f, 0.2f));       // green
-        drawMesh(tetra, tetraModel, glm::vec3(0.9f, 0.2f, 0.8f));     // magenta
-
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
+    // GL objects live inside run() so they are released while the context still exists.
+    run(window);
 
     glfwTerminate();
     return 0;

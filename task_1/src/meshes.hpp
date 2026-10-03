@@ -3,11 +3,16 @@
 #include <glm/ext/vector_float3.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 class Mesh {
 public:
+    Mesh()                       = default;
+    Mesh(const Mesh&)            = delete;
+    Mesh& operator=(const Mesh&) = delete;
     ~Mesh();
+
     void draw() const;
 
 protected:
@@ -33,7 +38,7 @@ public:
 
 class Cube : public Mesh {
 public:
-    Cube(float halfExtent);
+    explicit Cube(float side);
 };
 
 class Sphere : public Mesh {
@@ -43,5 +48,7 @@ public:
 
 class Tetrahedron : public Mesh {
 public:
-    Tetrahedron(float edgeLength);
+    explicit Tetrahedron(float edge);
+
+    glm::vec3 apex() const { return vertices_[0]; }
 };

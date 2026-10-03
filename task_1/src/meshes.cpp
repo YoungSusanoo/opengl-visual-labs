@@ -1,10 +1,33 @@
 #include "meshes.hpp"
 
 #include <GL/glew.h>
+#include <glm/ext/vector_float2.hpp>
 
 #include <cmath>
 #include <numbers>
 #include <ranges>
+
+namespace {
+
+// First `count` points of a unit circle divided into `segments` equal steps.
+// sin/cos of the step are computed once; every next point is the previous one
+// rotated by the step: x' = c*x - s*y, y' = s*x + c*y.
+std::vector<glm::vec2> circlePoints(std::size_t segments, std::size_t count) {
+    const float step = 2.0f * std::numbers::pi_v<float> / static_cast<float>(segments);
+    const float c    = std::cos(step);
+    const float s    = std::sin(step);
+
+    std::vector<glm::vec2> points;
+    points.reserve(count);
+    glm::vec2 p(1.0f, 0.0f);
+    while (points.size() < count) {
+        points.push_back(p);
+        p = {c * p.x - s * p.y, s * p.x + c * p.y};
+    }
+    return points;
+}
+
+}  // namespace
 
 void Mesh::upload() {
     glGenVertexArrays(1, &vao_);
@@ -50,13 +73,11 @@ Axis::Axis(glm::vec3 direction, float length) {
 }
 
 Cone::Cone(float radius, float height, std::size_t segments) {
-    vertices_.reserve(segments);
-
-    for (std::size_t i : std::views::iota(std::size_t{0}, segments)) {
-        const float theta = 2.0f * std::numbers::pi * static_cast<float>(i) / static_cast<float>(segments);
-        vertices_.push_back({radius * std::cos(theta), 0.0f, radius * std::sin(theta)});
+    vertices_.reserve(segments + 1);
+    for (const glm::vec2& p : circlePoints(segments, segments)) {
+        vertices_.push_back({radius * p.x, 0.0f, radius * p.y});
     }
-    const auto apexIndex = static_cast<unsigned int>(segments);
+    const auto apexIndex = static_cast<uint32_t>(segments);
     vertices_.push_back({0.0f, height, 0.0f});
 
     edges_.reserve(segments * 4);
@@ -70,53 +91,56 @@ Cone::Cone(float radius, float height, std::size_t segments) {
 }
 
 Cube::Cube(float side) {
-    const float h = side / 2;
-    vertices_     = {
-        {-h, 0.0f, -h},
-        {h, 0.0f, -h},
-        {h, side, -h},
-        {-h, side, -h},
-        {-h, 0.0f, h},
-        {h, 0.0f, h},
-        {h, side, h},
-        {-h, side, h},
-    };
-    edges_ = {
-        0, 1, 1, 2, 2, 3, 3, 0,  // back face
-        4, 5, 5, 6, 6, 7, 7, 4,  // front face
-        0, 4, 1, 5, 2, 6, 3, 7,  // connecting edges
-    };
+    const float h = side / 2.0f;
+
+    // Vertex i has bit 0 -> x, bit 1 -> y, bit 2 -> z set to the far side.
+    vertices_.reserve(8);
+    for (uint32_t i : std::views::iota(uint32_t{0}, uint32_t{8})) {
+        vertices_.push_back({(i & 1u) ? h : -h, (i & 2u) ? side : 0.0f, (i & 4u) ? h : -h});
+    }
+
+    // Edges connect vertices that differ in exactly one bit.
+    edges_.reserve(24);
+    for (uint32_t i : std::views::iota(uint32_t{0}, uint32_t{8})) {
+        for (uint32_t bit : {1u, 2u, 4u}) {
+            if ((i & bit) == 0) {
+                edges_.insert(edges_.end(), {i, i | bit});
+            }
+        }
+    }
 
     upload();
 }
 
 Sphere::Sphere(float radius, std::size_t stacks, std::size_t slices) {
-    const auto index = [slices](std::size_t stack, std::size_t slice) {
-        return static_cast<uint32_t>(stack * slices + slice);
+    const auto parallel = circlePoints(slices, slices);      // (cos theta, sin theta), theta in [0, 2pi)
+    const auto meridian = circlePoints(2 * stacks, stacks);  // (cos phi, sin phi), phi in [0, pi)
+
+    // Vertex 0 is the north pole, then rings 1..stacks-1, then the south pole.
+    const uint32_t northPole = 0;
+    const auto     southPole = static_cast<uint32_t>(1 + (stacks - 1) * slices);
+    const auto     index     = [slices](std::size_t ring, std::size_t slice) {
+        return static_cast<uint32_t>(1 + (ring - 1) * slices + slice);
     };
 
-    for (std::size_t i : std::views::iota(std::size_t{0}, stacks + 1)) {
-        const float phi = std::numbers::pi_v<float> * static_cast<float>(i) / static_cast<float>(stacks);
-        for (std::size_t j : std::views::iota(std::size_t{0}, slices)) {
-            const float theta = 2.0f * std::numbers::pi_v<float> * static_cast<float>(j) / static_cast<float>(slices);
-            vertices_.push_back({
-                radius * std::sin(phi) * std::cos(theta),
-                radius * std::cos(phi),
-                radius * std::sin(phi) * std::sin(theta),
-            });
-        }
-    }
-
-    // Longitude arcs, pole to pole.
-    for (std::size_t i : std::views::iota(std::size_t{0}, stacks)) {
-        for (std::size_t j : std::views::iota(std::size_t{0}, slices)) {
-            edges_.insert(edges_.end(), {index(i, j), index(i + 1, j)});
-        }
-    }
-    // Latitude rings, skipping the poles (degenerate rings).
+    vertices_.reserve(southPole + 1);
+    vertices_.push_back({0.0f, radius, 0.0f});
     for (std::size_t i : std::views::iota(std::size_t{1}, stacks)) {
-        for (std::size_t j : std::views::iota(std::size_t{0}, slices)) {
-            edges_.insert(edges_.end(), {index(i, j), index(i, (j + 1) % slices)});
+        const float y          = radius * meridian[i].x;
+        const float ringRadius = radius * meridian[i].y;
+        for (const glm::vec2& p : parallel) {
+            vertices_.push_back({ringRadius * p.x, y, ringRadius * p.y});
+        }
+    }
+    vertices_.push_back({0.0f, -radius, 0.0f});
+
+    edges_.reserve(2 * slices * (2 * stacks - 1));
+    for (std::size_t j : std::views::iota(std::size_t{0}, slices)) {
+        const std::size_t next = (j + 1) % slices;
+        edges_.insert(edges_.end(), {northPole, index(1, j)});
+        for (std::size_t i : std::views::iota(std::size_t{1}, stacks)) {
+            edges_.insert(edges_.end(), {index(i, j), index(i, next)});
+            edges_.insert(edges_.end(), {index(i, j), i + 1 < stacks ? index(i + 1, j) : southPole});
         }
     }
 
@@ -124,14 +148,17 @@ Sphere::Sphere(float radius, std::size_t stacks, std::size_t slices) {
 }
 
 Tetrahedron::Tetrahedron(float edge) {
-    float height = std::sqrt(3.0f) * edge / 2.0f;
-    vertices_    = {
-        {0.0f, 0.0f, 0.0f},
-        {2.0f * height / 3.0f, height, 0.0f},
-        {-height / 3.0f, height, -2.0f * height / 3.0f},
-        {-height / 3.0f, height, 2.0f * height / 3.0f},
+    // Regular tetrahedron standing on the XZ plane: base centroid at the origin, apex on the Y axis.
+    // Base circumradius R = a/sqrt(3), height H = a*sqrt(2/3); only constants, no trigonometry.
+    const float r      = edge * std::numbers::inv_sqrt3_v<float>;
+    const float height = edge * std::numbers::sqrt2_v<float> * std::numbers::inv_sqrt3_v<float>;
+    vertices_          = {
+        {0.0f, height, 0.0f},  // apex
+        {r, 0.0f, 0.0f},
+        {-r / 2.0f, 0.0f, edge / 2.0f},
+        {-r / 2.0f, 0.0f, -edge / 2.0f},
     };
-    edges_ = {0, 1, 0, 2, 0, 3, 1, 2, 1, 3, 2, 3};
+    edges_ = {0, 1, 0, 2, 0, 3, 1, 2, 2, 3, 3, 1};
 
     upload();
 }
